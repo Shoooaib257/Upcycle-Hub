@@ -8,8 +8,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { X } from "lucide-react";
+import { X, Star, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ProductSearchFilters } from "@shared/schema";
 
 interface ProductFiltersProps {
@@ -200,6 +201,41 @@ export default function ProductFilters({ filters, onFilterChange }: ProductFilte
               </SelectContent>
             </Select>
           </div>
+        </div>
+      </div>
+      
+      {/* Additional filter toggles */}
+      <div className="flex flex-wrap gap-6 mb-8">
+        <div className="flex items-center space-x-2">
+          <Switch 
+            id="featured" 
+            checked={filters.featured === true}
+            onCheckedChange={(checked) => {
+              const updatedFilters = { ...filters, featured: checked ? true : undefined };
+              onFilterChange(updatedFilters);
+              updateQueryString(updatedFilters);
+            }}
+          />
+          <label htmlFor="featured" className="flex items-center cursor-pointer">
+            <Star className="mr-2 h-4 w-4 text-yellow-500" />
+            Featured Items
+          </label>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <Switch 
+            id="newArrivals" 
+            checked={filters.isNew === true}
+            onCheckedChange={(checked) => {
+              const updatedFilters = { ...filters, isNew: checked ? true : undefined };
+              onFilterChange(updatedFilters);
+              updateQueryString(updatedFilters);
+            }}
+          />
+          <label htmlFor="newArrivals" className="flex items-center cursor-pointer">
+            <Sparkles className="mr-2 h-4 w-4 text-blue-500" />
+            New Arrivals
+          </label>
         </div>
       </div>
       

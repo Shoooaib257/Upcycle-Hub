@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import ProductFilters from "@/components/products/ProductFilters";
 import ProductGrid from "@/components/products/ProductGrid";
+import SearchBar from "@/components/products/SearchBar";
 import { useQuery } from "@tanstack/react-query";
 import { ProductSearchFilters, User } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -56,7 +57,7 @@ export default function ProductsPage() {
   };
   
   // Fetch products based on filters
-  const { data: products, isLoading, isError, error } = useQuery({
+  const { data: products = [], isLoading, isError, error } = useQuery<any[]>({
     queryKey: [`/api/products?${buildQueryString()}`],
   });
   
@@ -69,13 +70,23 @@ export default function ProductsPage() {
   // Pagination logic
   const indexOfLastProduct = currentPage * productsPerPage;
   const indexOfFirstProduct = indexOfLastProduct - productsPerPage;
-  const currentProducts = products ? products.slice(indexOfFirstProduct, indexOfLastProduct) : [];
-  const totalPages = products ? Math.ceil(products.length / productsPerPage) : 0;
+  const currentProducts = products.slice(indexOfFirstProduct, indexOfLastProduct);
+  const totalPages = Math.ceil(products.length / productsPerPage);
   
+  // Handle search
+  const handleSearch = (query: string) => {
+    setFilters({ ...filters, query });
+    setCurrentPage(1); // Reset to first page on new search
+  };
+
   return (
     <section className="bg-neutral py-12">
       <div className="container mx-auto px-4">
         <ProductFilters filters={filters} onFilterChange={handleFilterChange} />
+        <SearchBar 
+          initialQuery={filters.query || ""} 
+          onSearch={handleSearch} 
+        />
         
         {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">

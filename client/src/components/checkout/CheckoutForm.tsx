@@ -164,7 +164,7 @@ export default function CheckoutForm({ items }: CheckoutFormProps) {
   const total = subtotal + shipping;
 
   // Create PaymentIntent as soon as the component loads
-  useState(() => {
+  useEffect(() => {
     const createPaymentIntent = async () => {
       setIsLoading(true);
       try {
@@ -191,7 +191,7 @@ export default function CheckoutForm({ items }: CheckoutFormProps) {
       setIsLoading(false);
       setErrorMessage("Your cart is empty");
     }
-  }, []);
+  }, [items, total, toast]);
 
   if (isLoading) {
     return (
