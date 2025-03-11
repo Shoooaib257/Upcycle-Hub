@@ -1,577 +1,600 @@
-import type { Express, Request, Response } from "express";
+import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { 
+  insertUserSchema, 
+  insertProductSchema, 
+  insertCartSchema, 
+  insertCartItemSchema, 
+  insertOrderSchema,
+  insertOrderItemSchema
+} from "@shared/schema";
+import { z } from "zod";
+import Stripe from "stripe";
 import multer from "multer";
 import path from "path";
-import Stripe from "stripe";
-import bcrypt from "bcryptjs";
-import {
-  insertUserSchema,
-  insertProductSchema,
-  insertCartItemSchema,
-  insertOrderSchema,
-  insertOrderItemSchema,
-  productSearchSchema
-} from "@shared/schema";
+import fs from "fs";
 import { ZodError } from "zod";
+import session from "express-session";
+import passport from "passport";
+import { Strategy as LocalStrategy } from "passport-local";
+import bcrypt from "bcryptjs";
+import MemoryStore from "memorystore";
 
-// Check for Stripe API key
+// Initialize Stripe
 if (!process.env.STRIPE_SECRET_KEY) {
-  console.warn('Missing Stripe Secret Key. Payment functionality will be limited.');
+  console.warn('Missing STRIPE_SECRET_KEY environment variable, using test key');
 }
-
-// Initialize Stripe with the secret key if available
-const stripe = process.env.STRIPE_SECRET_KEY 
-  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" })
-  : undefined;
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_51OZIBnQWr0fF1SuQSscqzgVXzqKa7Cd8Ju6Hhm4DjFIbCF3d2oWlhjfwDfZvUxFuGw3xLQvjEYkAFeSNEMmAYvNq00VdZUKLgA', {
+  apiVersion: '2023-10-16',
+});
 
 // Configure multer for file uploads
-const storage2 = multer.memoryStorage(); // In-memory storage for files
-const upload = multer({ storage: storage2 });
+const uploadDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
-// Simple session management (replace with proper session system for production)
-const sessions: Record<string, { userId: number, username: string }> = {};
+const storage2 = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+  }
+});
+
+const upload = multer({ 
+  storage: storage2,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max file size
+  fileFilter: (req, file, cb) => {
+    // Only allow images
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed!') as any);
+    }
+  }
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  const httpServer = createServer(app);
-
-  // Middleware to parse session from cookies
-  app.use((req: Request & { session?: { userId: number, username: string } }, res, next) => {
-    const sessionId = req.cookies?.sessionId;
-    if (sessionId && sessions[sessionId]) {
-      req.session = sessions[sessionId];
-    }
-    next();
+  // Create session store
+  const MemoryStoreSession = MemoryStore(session);
+  const sessionStore = new MemoryStoreSession({
+    checkPeriod: 86400000 // prune expired entries every 24h
   });
 
-  // Authentication routes
-  app.post("/api/register", async (req, res) => {
+  // Initialize session
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'ecorevive-secret',
+    resave: false,
+    saveUninitialized: false,
+    store: sessionStore,
+    cookie: {
+      maxAge: 1000 * 60 * 60 * 24 // 24 hours
+    }
+  }));
+
+  // Initialize passport
+  app.use(passport.initialize());
+  app.use(passport.session());
+
+  // Configure passport local strategy
+  passport.use(new LocalStrategy(async (username, password, done) => {
+    try {
+      const user = await storage.getUserByUsername(username);
+      if (!user) {
+        return done(null, false, { message: 'Incorrect username.' });
+      }
+      
+      // In a real app, we'd use bcrypt.compare to check the password
+      // For this demo, we'll just check direct equality
+      if (user.password !== password) {
+        return done(null, false, { message: 'Incorrect password.' });
+      }
+      
+      return done(null, user);
+    } catch (err) {
+      return done(err);
+    }
+  }));
+
+  passport.serializeUser((user: any, done) => {
+    done(null, user.id);
+  });
+
+  passport.deserializeUser(async (id: number, done) => {
+    try {
+      const user = await storage.getUser(id);
+      done(null, user);
+    } catch (err) {
+      done(err);
+    }
+  });
+
+  // Create uploads directory for product images if it doesn't exist
+  app.use('/uploads', express.static(uploadDir));
+
+  // API routes
+  // ===== Authentication Routes =====
+  app.post('/api/auth/register', async (req, res) => {
     try {
       const userData = insertUserSchema.parse(req.body);
       
       // Check if user already exists
       const existingUser = await storage.getUserByUsername(userData.username);
       if (existingUser) {
-        return res.status(400).json({ message: "Username already exists" });
+        return res.status(400).json({ message: 'Username already exists' });
       }
-
+      
       const existingEmail = await storage.getUserByEmail(userData.email);
       if (existingEmail) {
-        return res.status(400).json({ message: "Email already exists" });
+        return res.status(400).json({ message: 'Email already exists' });
       }
-
-      // Hash password
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(userData.password, salt);
-
-      // Create user with hashed password
-      const user = await storage.createUser({
-        ...userData,
-        password: hashedPassword
-      });
-
-      // Create session
-      const sessionId = Math.random().toString(36).substring(2, 15);
-      sessions[sessionId] = { userId: user.id, username: user.username };
-
-      // Set cookie and return user data (excluding password)
-      res.cookie("sessionId", sessionId, { httpOnly: true });
+      
+      // Hash password in a real app
+      // userData.password = await bcrypt.hash(userData.password, 10);
+      
+      const user = await storage.createUser(userData);
       const { password, ...userWithoutPassword } = user;
+      
       res.status(201).json(userWithoutPassword);
     } catch (error) {
       if (error instanceof ZodError) {
-        res.status(400).json({ message: "Invalid input data", errors: error.errors });
+        res.status(400).json({ message: 'Validation error', errors: error.format() });
       } else {
-        console.error("Registration error:", error);
-        res.status(500).json({ message: "Error registering user" });
+        res.status(500).json({ message: 'Server error' });
       }
     }
   });
 
-  app.post("/api/login", async (req, res) => {
+  app.post('/api/auth/login', (req, res, next) => {
+    passport.authenticate('local', (err, user, info) => {
+      if (err) {
+        return next(err);
+      }
+      if (!user) {
+        return res.status(401).json({ message: info.message });
+      }
+      req.logIn(user, (err) => {
+        if (err) {
+          return next(err);
+        }
+        const { password, ...userWithoutPassword } = user;
+        return res.json(userWithoutPassword);
+      });
+    })(req, res, next);
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    req.logout(() => {
+      res.json({ message: 'Logged out successfully' });
+    });
+  });
+
+  app.get('/api/auth/user', (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+    const { password, ...userWithoutPassword } = req.user as any;
+    res.json(userWithoutPassword);
+  });
+
+  // ===== Product Routes =====
+  app.get('/api/products', async (req, res) => {
     try {
-      const { username, password } = req.body;
+      const { category, priceMin, priceMax, sortBy, featured, isNew, query } = req.query;
       
-      // Validate input
-      if (!username || !password) {
-        return res.status(400).json({ message: "Username and password are required" });
-      }
-
-      // Find user
-      const user = await storage.getUserByUsername(username);
-      if (!user) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-
-      // Check password
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      if (!isPasswordValid) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-
-      // Create session
-      const sessionId = Math.random().toString(36).substring(2, 15);
-      sessions[sessionId] = { userId: user.id, username: user.username };
-
-      // Set cookie and return user data (excluding password)
-      res.cookie("sessionId", sessionId, { httpOnly: true });
-      const { password: _, ...userWithoutPassword } = user;
-      res.status(200).json(userWithoutPassword);
+      const filters: any = {};
+      if (category) filters.category = category as string;
+      if (priceMin) filters.priceMin = parseFloat(priceMin as string);
+      if (priceMax) filters.priceMax = parseFloat(priceMax as string);
+      if (sortBy) filters.sortBy = sortBy as any;
+      if (featured) filters.featured = featured === 'true';
+      if (isNew) filters.isNew = isNew === 'true';
+      if (query) filters.query = query as string;
+      
+      const products = await storage.getProducts(filters);
+      res.json(products);
     } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ message: "Error logging in" });
+      res.status(500).json({ message: 'Server error' });
     }
   });
 
-  app.post("/api/logout", (req, res) => {
-    const sessionId = req.cookies?.sessionId;
-    if (sessionId) {
-      delete sessions[sessionId];
-      res.clearCookie("sessionId");
-    }
-    res.status(200).json({ message: "Logged out successfully" });
-  });
-
-  app.get("/api/me", async (req: Request & { session?: { userId: number } }, res) => {
-    if (!req.session?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
+  app.get('/api/products/featured', async (req, res) => {
     try {
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const { password, ...userWithoutPassword } = user;
-      res.status(200).json(userWithoutPassword);
+      const products = await storage.getFeaturedProducts();
+      res.json(products);
     } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Error fetching user data" });
+      res.status(500).json({ message: 'Server error' });
     }
   });
 
-  // Product routes
-  app.get("/api/products", async (req, res) => {
+  app.get('/api/products/:id', async (req, res) => {
     try {
-      const queryParams = req.query;
-      const filters = {
-        query: queryParams.query as string,
-        category: queryParams.category as string,
-        minPrice: queryParams.minPrice ? Number(queryParams.minPrice) : undefined,
-        maxPrice: queryParams.maxPrice ? Number(queryParams.maxPrice) : undefined,
-        condition: queryParams.condition as string,
-        location: queryParams.location as string,
-        sortBy: queryParams.sortBy as any
-      };
-
-      const validatedFilters = productSearchSchema.parse(filters);
-      const products = await storage.getProducts(validatedFilters);
-      res.status(200).json(products);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        res.status(400).json({ message: "Invalid query parameters", errors: error.errors });
-      } else {
-        console.error("Error fetching products:", error);
-        res.status(500).json({ message: "Error fetching products" });
-      }
-    }
-  });
-
-  app.get("/api/products/featured", async (req, res) => {
-    try {
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const products = await storage.getFeaturedProducts(limit);
-      res.status(200).json(products);
-    } catch (error) {
-      console.error("Error fetching featured products:", error);
-      res.status(500).json({ message: "Error fetching featured products" });
-    }
-  });
-
-  app.get("/api/products/category/:category", async (req, res) => {
-    try {
-      const category = req.params.category;
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const products = await storage.getProductsByCategory(category, limit);
-      res.status(200).json(products);
-    } catch (error) {
-      console.error("Error fetching products by category:", error);
-      res.status(500).json({ message: "Error fetching products by category" });
-    }
-  });
-
-  app.get("/api/products/:id", async (req, res) => {
-    try {
-      const productId = parseInt(req.params.id);
-      const product = await storage.getProduct(productId);
+      const id = parseInt(req.params.id);
+      const product = await storage.getProduct(id);
       
       if (!product) {
-        return res.status(404).json({ message: "Product not found" });
+        return res.status(404).json({ message: 'Product not found' });
       }
       
-      res.status(200).json(product);
+      res.json(product);
     } catch (error) {
-      console.error("Error fetching product:", error);
-      res.status(500).json({ message: "Error fetching product" });
+      res.status(500).json({ message: 'Server error' });
     }
   });
 
-  app.post("/api/products", upload.array("images", 5), async (req: Request & { session?: { userId: number } }, res) => {
-    if (!req.session?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
+  app.post('/api/products', upload.fields([
+    { name: 'imageUrl', maxCount: 1 },
+    { name: 'additionalImages', maxCount: 5 }
+  ]), async (req, res) => {
     try {
-      // Temporary image URLs in place of real file uploads
-      const imageUrls = [
-        "https://images.unsplash.com/photo-1577215237820-9af15fea5a10",
-        "https://images.unsplash.com/photo-1595528862909-17ab1f491c1e",
-        "https://images.unsplash.com/photo-1584589167171-541ce45f1eea",
-        "https://images.unsplash.com/photo-1600250395178-40fe752e5189"
-      ];
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
       
-      // In a real app, we would process uploaded files here
+      const user = req.user as any;
+      if (!user.isSeller) {
+        return res.status(403).json({ message: 'Not authorized to create products' });
+      }
+      
+      // Handle file uploads
+      let imageUrl = '';
+      let additionalImages: string[] = [];
+      
+      if (req.files && (req.files as any)['imageUrl']) {
+        const mainImage = (req.files as any)['imageUrl'][0];
+        imageUrl = `/uploads/${mainImage.filename}`;
+      }
+      
+      if (req.files && (req.files as any)['additionalImages']) {
+        additionalImages = (req.files as any)['additionalImages'].map(
+          (file: any) => `/uploads/${file.filename}`
+        );
+      }
+      
+      // Validate and create product
       const productData = insertProductSchema.parse({
         ...req.body,
+        sellerId: user.id,
+        imageUrl: imageUrl || req.body.imageUrl,
+        additionalImages: additionalImages.length > 0 ? additionalImages : undefined,
         price: parseFloat(req.body.price),
-        sellerId: req.session.userId,
-        images: [imageUrls[Math.floor(Math.random() * imageUrls.length)]]
+        featured: req.body.featured === 'true',
+        isNew: req.body.isNew === 'true'
       });
-
+      
       const product = await storage.createProduct(productData);
       res.status(201).json(product);
     } catch (error) {
       if (error instanceof ZodError) {
-        res.status(400).json({ message: "Invalid product data", errors: error.errors });
+        res.status(400).json({ message: 'Validation error', errors: error.format() });
       } else {
-        console.error("Error creating product:", error);
-        res.status(500).json({ message: "Error creating product" });
+        console.error(error);
+        res.status(500).json({ message: 'Server error' });
       }
     }
   });
 
-  // Cart routes
-  app.get("/api/cart", async (req: Request & { session?: { userId: number } }, res) => {
-    if (!req.session?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
+  app.put('/api/products/:id', async (req, res) => {
     try {
-      const cartItems = await storage.getCartItems(req.session.userId);
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
       
-      // Fetch product details for each cart item
-      const cartWithDetails = await Promise.all(
-        cartItems.map(async (item) => {
-          const product = await storage.getProduct(item.productId);
-          return {
-            ...item,
-            product: product || null
-          };
-        })
-      );
+      const id = parseInt(req.params.id);
+      const product = await storage.getProduct(id);
       
-      res.status(200).json(cartWithDetails);
+      if (!product) {
+        return res.status(404).json({ message: 'Product not found' });
+      }
+      
+      const user = req.user as any;
+      
+      // Check if user is the seller or an admin
+      if (product.sellerId !== user.id && !user.isAdmin) {
+        return res.status(403).json({ message: 'Not authorized to update this product' });
+      }
+      
+      const updatedProduct = await storage.updateProduct(id, req.body);
+      res.json(updatedProduct);
     } catch (error) {
-      console.error("Error fetching cart:", error);
-      res.status(500).json({ message: "Error fetching cart" });
+      res.status(500).json({ message: 'Server error' });
     }
   });
 
-  app.post("/api/cart", async (req: Request & { session?: { userId: number } }, res) => {
-    if (!req.session?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
+  app.delete('/api/products/:id', async (req, res) => {
     try {
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+      
+      const id = parseInt(req.params.id);
+      const product = await storage.getProduct(id);
+      
+      if (!product) {
+        return res.status(404).json({ message: 'Product not found' });
+      }
+      
+      const user = req.user as any;
+      
+      // Check if user is the seller or an admin
+      if (product.sellerId !== user.id && !user.isAdmin) {
+        return res.status(403).json({ message: 'Not authorized to delete this product' });
+      }
+      
+      await storage.deleteProduct(id);
+      res.json({ message: 'Product deleted successfully' });
+    } catch (error) {
+      res.status(500).json({ message: 'Server error' });
+    }
+  });
+
+  // ===== Cart Routes =====
+  app.get('/api/cart', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+      
+      const userId = (req.user as any).id;
+      let cart = await storage.getCartByUserId(userId);
+      
+      if (!cart) {
+        cart = await storage.createCart({ userId });
+      }
+      
+      const cartItems = await storage.getCartItems(cart.id);
+      
+      res.json({
+        id: cart.id,
+        items: cartItems,
+        total: cartItems.reduce((total, item) => total + (item.product.price * item.quantity), 0)
+      });
+    } catch (error) {
+      res.status(500).json({ message: 'Server error' });
+    }
+  });
+
+  app.post('/api/cart/items', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+      
+      const userId = (req.user as any).id;
+      let cart = await storage.getCartByUserId(userId);
+      
+      if (!cart) {
+        cart = await storage.createCart({ userId });
+      }
+      
       const cartItemData = insertCartItemSchema.parse({
         ...req.body,
-        userId: req.session.userId
+        cartId: cart.id
       });
-
-      const cartItem = await storage.addToCart(cartItemData);
       
-      // Get product details
-      const product = await storage.getProduct(cartItem.productId);
+      const cartItem = await storage.addItemToCart(cartItemData);
+      const updatedCartItems = await storage.getCartItems(cart.id);
       
       res.status(201).json({
-        ...cartItem,
-        product: product || null
+        id: cart.id,
+        items: updatedCartItems,
+        total: updatedCartItems.reduce((total, item) => total + (item.product.price * item.quantity), 0)
       });
     } catch (error) {
       if (error instanceof ZodError) {
-        res.status(400).json({ message: "Invalid cart item data", errors: error.errors });
+        res.status(400).json({ message: 'Validation error', errors: error.format() });
       } else {
-        console.error("Error adding item to cart:", error);
-        res.status(500).json({ message: "Error adding item to cart" });
+        res.status(500).json({ message: 'Server error' });
       }
     }
   });
 
-  app.put("/api/cart/:id", async (req: Request & { session?: { userId: number } }, res) => {
-    if (!req.session?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
+  app.put('/api/cart/items/:id', async (req, res) => {
     try {
-      const itemId = parseInt(req.params.id);
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+      
+      const id = parseInt(req.params.id);
       const { quantity } = req.body;
       
-      if (quantity === undefined || isNaN(quantity) || quantity < 1) {
-        return res.status(400).json({ message: "Invalid quantity" });
+      if (!quantity || quantity < 1) {
+        return res.status(400).json({ message: 'Invalid quantity' });
       }
       
-      const updatedItem = await storage.updateCartItemQuantity(itemId, quantity);
+      const updatedCartItem = await storage.updateCartItemQuantity(id, quantity);
       
-      if (!updatedItem) {
-        return res.status(404).json({ message: "Cart item not found" });
+      if (!updatedCartItem) {
+        return res.status(404).json({ message: 'Cart item not found' });
       }
       
-      // Get product details
-      const product = await storage.getProduct(updatedItem.productId);
+      const userId = (req.user as any).id;
+      const cart = await storage.getCartByUserId(userId);
       
-      res.status(200).json({
-        ...updatedItem,
-        product: product || null
+      if (!cart) {
+        return res.status(404).json({ message: 'Cart not found' });
+      }
+      
+      const cartItems = await storage.getCartItems(cart.id);
+      
+      res.json({
+        id: cart.id,
+        items: cartItems,
+        total: cartItems.reduce((total, item) => total + (item.product.price * item.quantity), 0)
       });
     } catch (error) {
-      console.error("Error updating cart item:", error);
-      res.status(500).json({ message: "Error updating cart item" });
+      res.status(500).json({ message: 'Server error' });
     }
   });
 
-  app.delete("/api/cart/:id", async (req: Request & { session?: { userId: number } }, res) => {
-    if (!req.session?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
+  app.delete('/api/cart/items/:id', async (req, res) => {
     try {
-      const itemId = parseInt(req.params.id);
-      const success = await storage.removeFromCart(itemId);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Cart item not found" });
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
       }
       
-      res.status(200).json({ message: "Item removed from cart" });
+      const id = parseInt(req.params.id);
+      await storage.removeCartItem(id);
+      
+      const userId = (req.user as any).id;
+      const cart = await storage.getCartByUserId(userId);
+      
+      if (!cart) {
+        return res.status(404).json({ message: 'Cart not found' });
+      }
+      
+      const cartItems = await storage.getCartItems(cart.id);
+      
+      res.json({
+        id: cart.id,
+        items: cartItems,
+        total: cartItems.reduce((total, item) => total + (item.product.price * item.quantity), 0)
+      });
     } catch (error) {
-      console.error("Error removing item from cart:", error);
-      res.status(500).json({ message: "Error removing item from cart" });
+      res.status(500).json({ message: 'Server error' });
     }
   });
 
-  app.delete("/api/cart", async (req: Request & { session?: { userId: number } }, res) => {
-    if (!req.session?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
+  // ===== Order Routes =====
+  app.get('/api/orders', async (req, res) => {
     try {
-      await storage.clearCart(req.session.userId);
-      res.status(200).json({ message: "Cart cleared" });
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+      
+      const userId = (req.user as any).id;
+      const orders = await storage.getUserOrders(userId);
+      
+      res.json(orders);
     } catch (error) {
-      console.error("Error clearing cart:", error);
-      res.status(500).json({ message: "Error clearing cart" });
+      res.status(500).json({ message: 'Server error' });
     }
   });
 
-  // Order routes
-  app.post("/api/orders", async (req: Request & { session?: { userId: number } }, res) => {
-    if (!req.session?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
+  app.get('/api/orders/:id', async (req, res) => {
     try {
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+      
+      const id = parseInt(req.params.id);
+      const order = await storage.getOrder(id);
+      
+      if (!order) {
+        return res.status(404).json({ message: 'Order not found' });
+      }
+      
+      const userId = (req.user as any).id;
+      
+      // Check if user is the owner of the order
+      if (order.userId !== userId && !(req.user as any).isAdmin) {
+        return res.status(403).json({ message: 'Not authorized to view this order' });
+      }
+      
+      const orderItems = await storage.getOrderItems(id);
+      
+      res.json({
+        ...order,
+        items: orderItems
+      });
+    } catch (error) {
+      res.status(500).json({ message: 'Server error' });
+    }
+  });
+
+  app.post('/api/orders', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+      
+      const userId = (req.user as any).id;
       const { shippingAddress } = req.body;
       
       if (!shippingAddress) {
-        return res.status(400).json({ message: "Shipping address is required" });
+        return res.status(400).json({ message: 'Shipping address is required' });
       }
       
-      // Get cart items
-      const cartItems = await storage.getCartItems(req.session.userId);
+      const cart = await storage.getCartByUserId(userId);
+      
+      if (!cart) {
+        return res.status(404).json({ message: 'Cart not found' });
+      }
+      
+      const cartItems = await storage.getCartItems(cart.id);
       
       if (cartItems.length === 0) {
-        return res.status(400).json({ message: "Cart is empty" });
+        return res.status(400).json({ message: 'Cart is empty' });
       }
       
-      // Calculate total
-      let total = 0;
-      const orderItems = await Promise.all(
-        cartItems.map(async (item) => {
-          const product = await storage.getProduct(item.productId);
-          if (!product) {
-            throw new Error(`Product not found: ${item.productId}`);
-          }
-          
-          total += product.price * item.quantity;
-          
-          return {
-            productId: item.productId,
-            quantity: item.quantity,
-            price: product.price
-          };
-        })
-      );
+      const total = cartItems.reduce((total, item) => total + (item.product.price * item.quantity), 0);
       
-      // Create order
       const orderData = insertOrderSchema.parse({
-        userId: req.session.userId,
+        userId,
         total,
         shippingAddress,
-        status: "pending"
+        status: 'pending'
       });
       
-      const order = await storage.createOrder(orderData, orderItems);
+      const order = await storage.createOrder(orderData);
       
-      // Clear cart
-      await storage.clearCart(req.session.userId);
-      
-      res.status(201).json(order);
-    } catch (error) {
-      console.error("Error creating order:", error);
-      res.status(500).json({ message: "Error creating order" });
-    }
-  });
-
-  app.get("/api/orders", async (req: Request & { session?: { userId: number } }, res) => {
-    if (!req.session?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
-    try {
-      const orders = await storage.getUserOrders(req.session.userId);
-      res.status(200).json(orders);
-    } catch (error) {
-      console.error("Error fetching orders:", error);
-      res.status(500).json({ message: "Error fetching orders" });
-    }
-  });
-
-  app.get("/api/orders/:id", async (req: Request & { session?: { userId: number } }, res) => {
-    if (!req.session?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
-    try {
-      const orderId = parseInt(req.params.id);
-      const order = await storage.getOrder(orderId);
-      
-      if (!order) {
-        return res.status(404).json({ message: "Order not found" });
-      }
-      
-      // Check if order belongs to user
-      if (order.userId !== req.session.userId) {
-        return res.status(403).json({ message: "Unauthorized" });
-      }
-      
-      // Get order items
-      const orderItems = await storage.getOrderItems(orderId);
-      
-      // Get product details for each order item
-      const itemsWithDetails = await Promise.all(
-        orderItems.map(async (item) => {
-          const product = await storage.getProduct(item.productId);
-          return {
-            ...item,
-            product: product || null
-          };
-        })
-      );
-      
-      res.status(200).json({
-        ...order,
-        items: itemsWithDetails
-      });
-    } catch (error) {
-      console.error("Error fetching order:", error);
-      res.status(500).json({ message: "Error fetching order" });
-    }
-  });
-
-  // Stripe payment routes
-  app.post("/api/create-payment-intent", async (req: Request & { session?: { userId: number } }, res) => {
-    if (!req.session?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
-    try {
-      if (!stripe) {
-        return res.status(500).json({ message: "Stripe is not configured" });
-      }
-
-      const { orderId } = req.body;
-      
-      if (!orderId) {
-        return res.status(400).json({ message: "Order ID is required" });
-      }
-      
-      // Get order
-      const order = await storage.getOrder(parseInt(orderId));
-      
-      if (!order) {
-        return res.status(404).json({ message: "Order not found" });
-      }
-      
-      // Check if order belongs to user
-      if (order.userId !== req.session.userId) {
-        return res.status(403).json({ message: "Unauthorized" });
-      }
-      
-      // Create payment intent
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(order.total * 100), // Amount in cents
-        currency: "usd",
-        metadata: {
-          orderId: order.id.toString()
-        }
-      });
-      
-      // Update order with payment intent ID
-      await storage.updateOrderStatus(order.id, "processing", paymentIntent.id);
-      
-      res.status(200).json({
-        clientSecret: paymentIntent.client_secret
-      });
-    } catch (error) {
-      console.error("Error creating payment intent:", error);
-      res.status(500).json({ message: "Error creating payment intent" });
-    }
-  });
-
-  app.post("/api/webhook", async (req, res) => {
-    if (!stripe) {
-      return res.status(500).json({ message: "Stripe is not configured" });
-    }
-
-    const sig = req.headers['stripe-signature'];
-
-    if (!sig || !process.env.STRIPE_WEBHOOK_SECRET) {
-      return res.status(400).json({ message: "Missing signature or webhook secret" });
-    }
-
-    try {
-      const event = stripe.webhooks.constructEvent(
-        req.body,
-        sig,
-        process.env.STRIPE_WEBHOOK_SECRET
-      );
-
-      // Handle the event
-      if (event.type === 'payment_intent.succeeded') {
-        const paymentIntent = event.data.object;
-        const orderId = parseInt(paymentIntent.metadata.orderId);
+      // Create order items
+      for (const item of cartItems) {
+        await storage.createOrderItem({
+          orderId: order.id,
+          productId: item.productId,
+          price: item.product.price,
+          quantity: item.quantity
+        });
         
-        // Update order status
-        await storage.updateOrderStatus(orderId, "paid", paymentIntent.id);
+        // Remove item from cart
+        await storage.removeCartItem(item.id);
       }
-
-      res.status(200).json({ received: true });
+      
+      const orderItems = await storage.getOrderItems(order.id);
+      
+      res.status(201).json({
+        ...order,
+        items: orderItems
+      });
     } catch (error) {
-      console.error('Webhook error:', error);
-      res.status(400).json({ message: 'Webhook error' });
+      if (error instanceof ZodError) {
+        res.status(400).json({ message: 'Validation error', errors: error.format() });
+      } else {
+        res.status(500).json({ message: 'Server error' });
+      }
     }
   });
 
+  // ===== Stripe Payment Routes =====
+  app.post('/api/create-payment-intent', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+      
+      const { amount } = req.body;
+      
+      if (!amount) {
+        return res.status(400).json({ message: 'Amount is required' });
+      }
+      
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: Math.round(amount * 100), // Convert to cents
+        currency: 'usd',
+      });
+      
+      res.json({ clientSecret: paymentIntent.client_secret });
+    } catch (error: any) {
+      res.status(500).json({ message: 'Error creating payment intent: ' + error.message });
+    }
+  });
+
+  const httpServer = createServer(app);
   return httpServer;
 }

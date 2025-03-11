@@ -1,13 +1,14 @@
 import { 
-  users, type User, type InsertUser,
-  products, type Product, type InsertProduct,
-  cartItems, type CartItem, type InsertCartItem,
-  orders, type Order, type InsertOrder,
-  orderItems, type OrderItem, type InsertOrderItem,
-  type ProductSearch
+  users, products, carts, cartItems, orders, orderItems, 
+  type User, type InsertUser, 
+  type Product, type InsertProduct, 
+  type Cart, type InsertCart, 
+  type CartItem, type InsertCartItem, 
+  type Order, type InsertOrder, 
+  type OrderItem, type InsertOrderItem,
+  ProductSearchFilters
 } from "@shared/schema";
 
-// Interface for all the storage operations
 export interface IStorage {
   // User operations
   getUser(id: number): Promise<User | undefined>;
@@ -17,287 +18,197 @@ export interface IStorage {
   
   // Product operations
   getProduct(id: number): Promise<Product | undefined>;
-  getProducts(filters?: ProductSearch): Promise<Product[]>;
-  getFeaturedProducts(limit?: number): Promise<Product[]>;
-  getProductsByCategory(category: string, limit?: number): Promise<Product[]>;
-  getProductsBySeller(sellerId: number): Promise<Product[]>;
+  getProducts(filters?: ProductSearchFilters): Promise<Product[]>;
+  getFeaturedProducts(): Promise<Product[]>;
   createProduct(product: InsertProduct): Promise<Product>;
-  updateProduct(id: number, product: Partial<InsertProduct>): Promise<Product | undefined>;
+  updateProduct(id: number, product: Partial<Product>): Promise<Product | undefined>;
   deleteProduct(id: number): Promise<boolean>;
   
   // Cart operations
-  getCartItems(userId: number): Promise<CartItem[]>;
-  getCartItem(userId: number, productId: number): Promise<CartItem | undefined>;
-  addToCart(item: InsertCartItem): Promise<CartItem>;
+  getCart(id: number): Promise<Cart | undefined>;
+  getCartByUserId(userId: number): Promise<Cart | undefined>;
+  createCart(cart: InsertCart): Promise<Cart>;
+  
+  // CartItem operations
+  getCartItems(cartId: number): Promise<(CartItem & { product: Product })[]>;
+  addItemToCart(cartItem: InsertCartItem): Promise<CartItem>;
   updateCartItemQuantity(id: number, quantity: number): Promise<CartItem | undefined>;
-  removeFromCart(id: number): Promise<boolean>;
-  clearCart(userId: number): Promise<boolean>;
+  removeCartItem(id: number): Promise<boolean>;
   
   // Order operations
   getOrder(id: number): Promise<Order | undefined>;
   getUserOrders(userId: number): Promise<Order[]>;
-  createOrder(order: InsertOrder, items: InsertOrderItem[]): Promise<Order>;
-  updateOrderStatus(id: number, status: string, paymentIntentId?: string): Promise<Order | undefined>;
-  getOrderItems(orderId: number): Promise<OrderItem[]>;
+  createOrder(order: InsertOrder): Promise<Order>;
+  updateOrderStatus(id: number, status: string): Promise<Order | undefined>;
+  
+  // OrderItem operations
+  getOrderItems(orderId: number): Promise<(OrderItem & { product: Product })[]>;
+  createOrderItem(orderItem: InsertOrderItem): Promise<OrderItem>;
 }
 
 export class MemStorage implements IStorage {
   private users: Map<number, User>;
   private products: Map<number, Product>;
+  private carts: Map<number, Cart>;
   private cartItems: Map<number, CartItem>;
   private orders: Map<number, Order>;
   private orderItems: Map<number, OrderItem>;
-  private currentUserId: number;
-  private currentProductId: number;
-  private currentCartItemId: number;
-  private currentOrderId: number;
-  private currentOrderItemId: number;
+  
+  private userIdCounter: number;
+  private productIdCounter: number;
+  private cartIdCounter: number;
+  private cartItemIdCounter: number;
+  private orderIdCounter: number;
+  private orderItemIdCounter: number;
 
   constructor() {
     this.users = new Map();
     this.products = new Map();
+    this.carts = new Map();
     this.cartItems = new Map();
     this.orders = new Map();
     this.orderItems = new Map();
-    this.currentUserId = 1;
-    this.currentProductId = 1;
-    this.currentCartItemId = 1;
-    this.currentOrderId = 1;
-    this.currentOrderItemId = 1;
     
-    // Seed with some initial data for testing
-    this.seedData();
+    this.userIdCounter = 1;
+    this.productIdCounter = 1;
+    this.cartIdCounter = 1;
+    this.cartItemIdCounter = 1;
+    this.orderIdCounter = 1;
+    this.orderItemIdCounter = 1;
+    
+    // Initialize with some sample data for development
+    this.initializeSampleData();
   }
 
-  private seedData() {
-    // Example data for development/testing purposes
-    const user1: User = {
-      id: this.currentUserId++,
-      username: "johndoe",
-      password: "$2a$10$X7S.gU8FsrBfJRm/lQ6oE.eAhzOnXlN6qJqBnJ2HXgZ.V1gHAILcy", // "password123"
-      email: "john@example.com",
-      fullName: "John Doe",
-      location: "Portland, OR",
-      createdAt: new Date(),
-      role: "seller"
-    };
-    this.users.set(user1.id, user1);
-
-    const user2: User = {
-      id: this.currentUserId++,
-      username: "janesmith",
-      password: "$2a$10$X7S.gU8FsrBfJRm/lQ6oE.eAhzOnXlN6qJqBnJ2HXgZ.V1gHAILcy", // "password123"
-      email: "jane@example.com",
-      fullName: "Jane Smith",
-      location: "Seattle, WA",
-      createdAt: new Date(),
-      role: "buyer"
-    };
-    this.users.set(user2.id, user2);
-
-    // Example products
-    const products: InsertProduct[] = [
-      {
-        title: "Upcycled Wooden Coffee Table",
-        description: "Handcrafted coffee table made from reclaimed barn wood",
-        price: 189,
-        category: "Furniture",
-        condition: "Excellent",
-        images: ["https://images.unsplash.com/photo-1577215237820-9af15fea5a10"],
-        location: "Portland, OR",
-        sellerId: 1,
-        featured: true,
-        status: "available"
-      },
-      {
-        title: "Upcycled Denim Jacket",
-        description: "Custom embroidered jacket made from vintage denim",
-        price: 75,
-        category: "Fashion",
-        condition: "Like New",
-        images: ["https://images.unsplash.com/photo-1595528862909-17ab1f491c1e"],
-        location: "Austin, TX",
-        sellerId: 1,
-        featured: false,
-        status: "available"
-      },
-      {
-        title: "Repurposed Glass Lamp",
-        description: "Unique table lamp made from recycled wine bottles",
-        price: 59,
-        category: "Home Decor",
-        condition: "Excellent",
-        images: ["https://images.unsplash.com/photo-1584589167171-541ce45f1eea"],
-        location: "Seattle, WA",
-        sellerId: 1,
-        featured: false,
-        status: "available"
-      },
-      {
-        title: "Reclaimed Wood Wall Art",
-        description: "Geometric wall art piece made from reclaimed pallet wood",
-        price: 120,
-        category: "Art & Crafts",
-        condition: "New",
-        images: ["https://images.unsplash.com/photo-1600250395178-40fe752e5189"],
-        location: "Denver, CO",
-        sellerId: 1,
-        featured: true,
-        status: "available"
-      }
-    ];
-
-    for (const product of products) {
-      const newProduct: Product = {
-        ...product,
-        id: this.currentProductId++,
-        createdAt: new Date()
-      };
-      this.products.set(newProduct.id, newProduct);
-    }
+  private initializeSampleData() {
+    // Sample data is for development only
+    // Create admin user
+    this.createUser({
+      username: "admin",
+      password: "admin123",
+      email: "admin@ecorevive.com",
+      firstName: "Admin",
+      lastName: "User",
+      isSeller: true,
+    });
   }
 
-  // User methods
+  // User operations
   async getUser(id: number): Promise<User | undefined> {
     return this.users.get(id);
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     return Array.from(this.users.values()).find(
-      (user) => user.username === username
+      (user) => user.username.toLowerCase() === username.toLowerCase()
     );
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     return Array.from(this.users.values()).find(
-      (user) => user.email === email
+      (user) => user.email.toLowerCase() === email.toLowerCase()
     );
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.currentUserId++;
-    const user: User = { 
-      ...insertUser, 
-      id,
-      createdAt: new Date()
-    };
-    this.users.set(id, user);
-    return user;
+  async createUser(user: InsertUser): Promise<User> {
+    const id = this.userIdCounter++;
+    const now = new Date();
+    const newUser: User = { ...user, id, isAdmin: false, createdAt: now };
+    this.users.set(id, newUser);
+    return newUser;
   }
 
-  // Product methods
+  // Product operations
   async getProduct(id: number): Promise<Product | undefined> {
     return this.products.get(id);
   }
 
-  async getProducts(filters?: ProductSearch): Promise<Product[]> {
-    let filteredProducts = Array.from(this.products.values());
-
+  async getProducts(filters?: ProductSearchFilters): Promise<Product[]> {
+    let results = Array.from(this.products.values());
+    
     if (filters) {
+      // Filter by category
+      if (filters.category) {
+        results = results.filter(product => product.category === filters.category);
+      }
+      
+      // Filter by price range
+      if (filters.priceMin !== undefined) {
+        results = results.filter(product => product.price >= filters.priceMin!);
+      }
+      
+      if (filters.priceMax !== undefined) {
+        results = results.filter(product => product.price <= filters.priceMax!);
+      }
+      
+      // Filter by featured
+      if (filters.featured !== undefined) {
+        results = results.filter(product => product.featured === filters.featured);
+      }
+      
+      // Filter by new
+      if (filters.isNew !== undefined) {
+        results = results.filter(product => product.isNew === filters.isNew);
+      }
+      
+      // Search query in name or description
       if (filters.query) {
         const query = filters.query.toLowerCase();
-        filteredProducts = filteredProducts.filter(product => 
-          product.title.toLowerCase().includes(query) || 
-          product.description.toLowerCase().includes(query)
+        results = results.filter(
+          product => 
+            product.name.toLowerCase().includes(query) || 
+            product.description.toLowerCase().includes(query)
         );
       }
-
-      if (filters.category) {
-        filteredProducts = filteredProducts.filter(product => 
-          product.category === filters.category
-        );
-      }
-
-      if (filters.minPrice !== undefined) {
-        filteredProducts = filteredProducts.filter(product => 
-          product.price >= filters.minPrice!
-        );
-      }
-
-      if (filters.maxPrice !== undefined) {
-        filteredProducts = filteredProducts.filter(product => 
-          product.price <= filters.maxPrice!
-        );
-      }
-
-      if (filters.condition) {
-        filteredProducts = filteredProducts.filter(product => 
-          product.condition === filters.condition
-        );
-      }
-
-      if (filters.location) {
-        filteredProducts = filteredProducts.filter(product => 
-          product.location.toLowerCase().includes(filters.location!.toLowerCase())
-        );
-      }
-
-      // Apply sorting
+      
+      // Sorting
       if (filters.sortBy) {
         switch (filters.sortBy) {
           case 'newest':
-            filteredProducts.sort((a, b) => 
-              b.createdAt.getTime() - a.createdAt.getTime()
-            );
+            results.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
             break;
-          case 'price_asc':
-            filteredProducts.sort((a, b) => a.price - b.price);
+          case 'price_low_high':
+            results.sort((a, b) => a.price - b.price);
             break;
-          case 'price_desc':
-            filteredProducts.sort((a, b) => b.price - a.price);
+          case 'price_high_low':
+            results.sort((a, b) => b.price - a.price);
             break;
           case 'popular':
-            // In a real app, this would sort by popularity metrics
-            filteredProducts.sort((a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0));
+            results.sort((a, b) => b.rating - a.rating);
             break;
         }
       }
     }
-
-    return filteredProducts;
-  }
-
-  async getFeaturedProducts(limit?: number): Promise<Product[]> {
-    let featured = Array.from(this.products.values())
-      .filter(product => product.featured && product.status === 'available')
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     
-    return limit ? featured.slice(0, limit) : featured;
+    return results;
   }
 
-  async getProductsByCategory(category: string, limit?: number): Promise<Product[]> {
-    let categoryProducts = Array.from(this.products.values())
-      .filter(product => product.category === category && product.status === 'available')
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    
-    return limit ? categoryProducts.slice(0, limit) : categoryProducts;
-  }
-
-  async getProductsBySeller(sellerId: number): Promise<Product[]> {
-    return Array.from(this.products.values())
-      .filter(product => product.sellerId === sellerId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  async getFeaturedProducts(): Promise<Product[]> {
+    return Array.from(this.products.values()).filter(
+      (product) => product.featured
+    );
   }
 
   async createProduct(product: InsertProduct): Promise<Product> {
-    const id = this.currentProductId++;
-    const newProduct: Product = {
-      ...product,
-      id,
-      createdAt: new Date()
+    const id = this.productIdCounter++;
+    const now = new Date();
+    const newProduct: Product = { 
+      ...product, 
+      id, 
+      rating: 0, 
+      reviewCount: 0, 
+      createdAt: now,
+      additionalImages: product.additionalImages || []
     };
     this.products.set(id, newProduct);
     return newProduct;
   }
 
-  async updateProduct(id: number, product: Partial<InsertProduct>): Promise<Product | undefined> {
+  async updateProduct(id: number, product: Partial<Product>): Promise<Product | undefined> {
     const existingProduct = this.products.get(id);
     if (!existingProduct) return undefined;
-
-    const updatedProduct: Product = {
-      ...existingProduct,
-      ...product
-    };
+    
+    const updatedProduct = { ...existingProduct, ...product };
     this.products.set(id, updatedProduct);
     return updatedProduct;
   }
@@ -306,114 +217,116 @@ export class MemStorage implements IStorage {
     return this.products.delete(id);
   }
 
-  // Cart methods
-  async getCartItems(userId: number): Promise<CartItem[]> {
-    return Array.from(this.cartItems.values())
-      .filter(item => item.userId === userId);
+  // Cart operations
+  async getCart(id: number): Promise<Cart | undefined> {
+    return this.carts.get(id);
   }
 
-  async getCartItem(userId: number, productId: number): Promise<CartItem | undefined> {
-    return Array.from(this.cartItems.values())
-      .find(item => item.userId === userId && item.productId === productId);
+  async getCartByUserId(userId: number): Promise<Cart | undefined> {
+    return Array.from(this.carts.values()).find(
+      (cart) => cart.userId === userId
+    );
   }
 
-  async addToCart(item: InsertCartItem): Promise<CartItem> {
+  async createCart(cart: InsertCart): Promise<Cart> {
+    const id = this.cartIdCounter++;
+    const now = new Date();
+    const newCart: Cart = { ...cart, id, createdAt: now };
+    this.carts.set(id, newCart);
+    return newCart;
+  }
+
+  // CartItem operations
+  async getCartItems(cartId: number): Promise<(CartItem & { product: Product })[]> {
+    const items = Array.from(this.cartItems.values()).filter(
+      (item) => item.cartId === cartId
+    );
+    
+    return items.map(item => {
+      const product = this.products.get(item.productId)!;
+      return { ...item, product };
+    });
+  }
+
+  async addItemToCart(cartItem: InsertCartItem): Promise<CartItem> {
     // Check if item already exists in cart
-    const existingItem = await this.getCartItem(item.userId, item.productId);
+    const existingItem = Array.from(this.cartItems.values()).find(
+      (item) => item.cartId === cartItem.cartId && item.productId === cartItem.productId
+    );
     
     if (existingItem) {
-      // Update quantity instead of adding a new item
-      const updatedQuantity = (existingItem.quantity || 1) + (item.quantity || 1);
-      return (await this.updateCartItemQuantity(existingItem.id, updatedQuantity))!;
+      // Update quantity if item already exists
+      return this.updateCartItemQuantity(existingItem.id, existingItem.quantity + cartItem.quantity) as Promise<CartItem>;
     }
     
-    const id = this.currentCartItemId++;
-    const cartItem: CartItem = {
-      ...item,
-      id,
-      createdAt: new Date()
-    };
-    this.cartItems.set(id, cartItem);
-    return cartItem;
+    // Otherwise create new item
+    const id = this.cartItemIdCounter++;
+    const newCartItem: CartItem = { ...cartItem, id };
+    this.cartItems.set(id, newCartItem);
+    return newCartItem;
   }
 
   async updateCartItemQuantity(id: number, quantity: number): Promise<CartItem | undefined> {
     const cartItem = this.cartItems.get(id);
     if (!cartItem) return undefined;
-
-    const updatedItem: CartItem = {
-      ...cartItem,
-      quantity
-    };
-    this.cartItems.set(id, updatedItem);
-    return updatedItem;
+    
+    const updatedCartItem = { ...cartItem, quantity };
+    this.cartItems.set(id, updatedCartItem);
+    return updatedCartItem;
   }
 
-  async removeFromCart(id: number): Promise<boolean> {
+  async removeCartItem(id: number): Promise<boolean> {
     return this.cartItems.delete(id);
   }
 
-  async clearCart(userId: number): Promise<boolean> {
-    const userCartItems = Array.from(this.cartItems.values())
-      .filter(item => item.userId === userId);
-    
-    for (const item of userCartItems) {
-      this.cartItems.delete(item.id);
-    }
-    
-    return true;
-  }
-
-  // Order methods
+  // Order operations
   async getOrder(id: number): Promise<Order | undefined> {
     return this.orders.get(id);
   }
 
   async getUserOrders(userId: number): Promise<Order[]> {
-    return Array.from(this.orders.values())
-      .filter(order => order.userId === userId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return Array.from(this.orders.values()).filter(
+      (order) => order.userId === userId
+    );
   }
 
-  async createOrder(order: InsertOrder, items: InsertOrderItem[]): Promise<Order> {
-    const id = this.currentOrderId++;
-    const newOrder: Order = {
-      ...order,
-      id,
-      createdAt: new Date()
-    };
+  async createOrder(order: InsertOrder): Promise<Order> {
+    const id = this.orderIdCounter++;
+    const now = new Date();
+    const newOrder: Order = { ...order, id, createdAt: now, stripePaymentId: "" };
     this.orders.set(id, newOrder);
-
-    // Add order items
-    for (const item of items) {
-      const orderItem: OrderItem = {
-        ...item,
-        id: this.currentOrderItemId++,
-        orderId: id
-      };
-      this.orderItems.set(orderItem.id, orderItem);
-    }
-
     return newOrder;
   }
 
-  async updateOrderStatus(id: number, status: string, paymentIntentId?: string): Promise<Order | undefined> {
+  async updateOrderStatus(id: number, status: string): Promise<Order | undefined> {
     const order = this.orders.get(id);
     if (!order) return undefined;
-
-    const updatedOrder: Order = {
-      ...order,
-      status,
-      paymentIntentId: paymentIntentId || order.paymentIntentId
-    };
+    
+    // @ts-ignore - status is a string but we know it's valid
+    const updatedOrder = { ...order, status };
     this.orders.set(id, updatedOrder);
     return updatedOrder;
   }
 
-  async getOrderItems(orderId: number): Promise<OrderItem[]> {
-    return Array.from(this.orderItems.values())
-      .filter(item => item.orderId === orderId);
+  // OrderItem operations
+  async getOrderItems(orderId: number): Promise<(OrderItem & { product: Product })[]> {
+    const items = Array.from(this.orderItems.values()).filter(
+      (item) => item.orderId === orderId
+    );
+    
+    return items.map(item => {
+      const product = this.products.get(item.productId)!;
+      return { ...item, product };
+    });
+  }
+
+  async createOrderItem(orderItem: InsertOrderItem): Promise<OrderItem> {
+    const id = this.orderItemIdCounter++;
+    const newOrderItem: OrderItem = { ...orderItem, id };
+    this.orderItems.set(id, newOrderItem);
+    return newOrderItem;
   }
 }
 
+// Use in-memory storage for this application
 export const storage = new MemStorage();
