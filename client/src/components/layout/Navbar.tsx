@@ -63,7 +63,7 @@ export default function Navbar({ user }: NavbarProps) {
           <div className="flex items-center">
             <Link href="/" className="flex items-center">
               <RecycleIcon className="text-primary h-8 w-8 mr-2" />
-              <span className="text-primary font-heading font-bold text-2xl">EcoRevive</span>
+              <span className="text-primary font-heading font-bold text-2xl">Upcycle Hub</span>
             </Link>
           </div>
 

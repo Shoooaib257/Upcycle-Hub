@@ -10,7 +10,7 @@ export default function Footer() {
           <div className="mb-8 md:mb-0">
             <div className="flex items-center mb-4">
               <RecycleIcon className="text-white h-8 w-8 mr-2" />
-              <span className="font-heading font-bold text-2xl">EcoRevive</span>
+              <span className="font-heading font-bold text-2xl">Upcycle Hub</span>
             </div>
             <p className="mb-4">Transforming discarded items into treasured possessions while building a more sustainable future.</p>
             <div className="flex space-x-4">
@@ -65,7 +65,7 @@ export default function Footer() {
         
         <div className="border-t border-white border-opacity-20 pt-8">
           <div className="flex flex-col md:flex-row justify-between items-center">
-            <p className="text-sm text-white text-opacity-80">&copy; {new Date().getFullYear()} EcoRevive. All rights reserved.</p>
+            <p className="text-sm text-white text-opacity-80">&copy; {new Date().getFullYear()} Upcycle Hub. All rights reserved.</p>
             <div className="flex space-x-6 mt-4 md:mt-0">
               <Link href="#" className="text-sm text-white text-opacity-80 hover:text-opacity-100">Terms of Service</Link>
               <Link href="#" className="text-sm text-white text-opacity-80 hover:text-opacity-100">Privacy Policy</Link>
