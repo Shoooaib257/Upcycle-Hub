@@ -37,7 +37,7 @@ const HomePage = () => {
             <p className="text-lg mb-8">Discover unique upcycled items that reduce waste while adding character to your life.</p>
             <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
               <Link href="/products">
-                <Button className="bg-[#D17A50] hover:bg-[#B4683F] text-white font-heading font-medium px-8 py-3 rounded-full shadow-lg transition transform hover:-translate-y-1 w-full sm:w-auto">
+                <Button className="bg-emerald-500 hover:bg-emerald-600 text-white font-heading font-medium px-8 py-3 rounded-full shadow-lg transition transform hover:-translate-y-1 w-full sm:w-auto">
                   Shop Now
                   <ArrowRight className="h-5 w-5 ml-2" />
                 </Button>
@@ -88,7 +88,7 @@ const HomePage = () => {
             <p className="text-lg mb-6">Every purchase on Upcycle Hub helps divert products from landfills and reduces the demand for new production.</p>
             <p className="font-['Caveat'] text-2xl text-[#D17A50] mb-8">Together, we've saved over 15,000 items from ending up in landfills!</p>
             <Link href="/about">
-              <Button className="bg-primary hover:bg-primary-600 text-white font-heading font-medium px-8 py-3 rounded-full shadow-lg transition">
+              <Button className="bg-emerald-500 hover:bg-emerald-600 text-white font-heading font-medium px-8 py-3 rounded-full shadow-lg transition">
                 Learn About Our Mission
               </Button>
             </Link>
@@ -182,7 +182,7 @@ const HomePage = () => {
           
           <div className="mt-12 text-center">
             <Link href="/sell">
-              <Button className="bg-[#D17A50] hover:bg-[#B4683F] text-white font-heading font-medium px-8 py-3 rounded-full shadow-lg transition">
+              <Button className="bg-emerald-500 hover:bg-emerald-600 text-white font-heading font-medium px-8 py-3 rounded-full shadow-lg transition">
                 Start Selling Today
               </Button>
             </Link>
@@ -207,7 +207,7 @@ const HomePage = () => {
                 />
                 <Button 
                   type="submit" 
-                  className="mt-2 sm:mt-0 px-6 py-2 bg-[#D17A50] hover:bg-[#B4683F] rounded-full sm:rounded-l-none font-medium transition"
+                  className="mt-2 sm:mt-0 px-6 py-2 bg-emerald-500 hover:bg-emerald-600 rounded-full sm:rounded-l-none font-medium transition"
                 >
                   Subscribe
                 </Button>

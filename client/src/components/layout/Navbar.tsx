@@ -113,6 +113,11 @@ export default function Navbar({ user }: NavbarProps) {
                     </span>
                   )}
                 </Link>
+                {user.isSeller && (
+                  <Link href="/business-details" className="text-gray-700 hover:text-primary transition">
+                    Business Details
+                  </Link>
+                )}
                 <div className="flex items-center">
                   <Button
                     variant="ghost"
@@ -177,6 +182,15 @@ export default function Navbar({ user }: NavbarProps) {
                 >
                   Cart {cartItemCount > 0 && `(${cartItemCount})`}
                 </Link>
+                {user && user.isSeller && (
+                  <Link 
+                    href="/business-details" 
+                    className="text-lg font-medium hover:text-primary transition"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    Business Details
+                  </Link>
+                )}
                 {user ? (
                   <Button
                     variant="default"

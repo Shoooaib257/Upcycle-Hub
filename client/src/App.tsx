@@ -9,6 +9,7 @@ import CheckoutPage from "@/pages/CheckoutPage";
 import CreateProductPage from "@/pages/CreateProductPage";
 import AboutPage from "@/pages/AboutPage";
 import ContactPage from "@/pages/ContactPage";
+import BusinessDetailsPage from "@/pages/BusinessDetailsPage";
 import SignInPage from "@/pages/SignInPage";
 import SignUpPage from "@/pages/SignUpPage";
 import Navbar from "@/components/layout/Navbar";
@@ -35,6 +36,7 @@ function App() {
           <Route path="/sell" component={CreateProductPage} />
           <Route path="/about" component={AboutPage} />
           <Route path="/contact" component={ContactPage} />
+          <Route path="/business-details" component={BusinessDetailsPage} />
           <Route path="/signin" component={SignInPage} />
           <Route path="/signup" component={SignUpPage} />
           <Route component={NotFound} />
