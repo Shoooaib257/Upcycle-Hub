@@ -104,8 +104,8 @@ export default function ContactPage() {
                     <div>
                       <h3 className="font-heading font-semibold text-base">Email</h3>
                       <p className="text-gray-600 text-sm">
-                        info@ecorevive.com<br />
-                        support@ecorevive.com
+                        info@upcyclehub.com<br />
+                        support@upcyclehub.com
                       </p>
                     </div>
                   </CardContent>
@@ -236,7 +236,7 @@ export default function ContactPage() {
               <CardContent className="p-6">
                 <h3 className="font-heading font-semibold text-lg mb-2">How do I know if a product is truly upcycled?</h3>
                 <p className="text-gray-600">
-                  All products on EcoRevive include detailed information about the materials used and the upcycling process. We verify seller claims and promote transparency about product origins.
+                  All products on Upcycle Hub include detailed information about the materials used and the upcycling process. We verify seller claims and promote transparency about product origins.
                 </p>
               </CardContent>
             </Card>
@@ -252,7 +252,7 @@ export default function ContactPage() {
             
             <Card className="border-none shadow-sm">
               <CardContent className="p-6">
-                <h3 className="font-heading font-semibold text-lg mb-2">How can I become a seller on EcoRevive?</h3>
+                <h3 className="font-heading font-semibold text-lg mb-2">How can I become a seller on Upcycle Hub?</h3>
                 <p className="text-gray-600">
                   You can register as a seller by creating an account and completing the seller application. We review all applications to ensure alignment with our sustainability values.
                 </p>

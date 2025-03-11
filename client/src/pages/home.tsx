@@ -85,7 +85,7 @@ const HomePage = () => {
               <Sun className="h-12 w-12 text-primary" />
             </div>
             <h2 className="text-3xl font-heading font-bold text-primary mb-4">Reducing Waste, One Product at a Time</h2>
-            <p className="text-lg mb-6">Every purchase on EcoRevive helps divert products from landfills and reduces the demand for new production.</p>
+            <p className="text-lg mb-6">Every purchase on Upcycle Hub helps divert products from landfills and reduces the demand for new production.</p>
             <p className="font-['Caveat'] text-2xl text-[#D17A50] mb-8">Together, we've saved over 15,000 items from ending up in landfills!</p>
             <Link href="/about">
               <Button className="bg-primary hover:bg-primary-600 text-white font-heading font-medium px-8 py-3 rounded-full shadow-lg transition">
@@ -144,7 +144,7 @@ const HomePage = () => {
       <section className="bg-neutral-50 py-12 md:py-16">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-heading font-bold text-[#433422] mb-2">How EcoRevive Works</h2>
+            <h2 className="text-3xl font-heading font-bold text-[#433422] mb-2">How Upcycle Hub Works</h2>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">Join our community of eco-conscious buyers and sellers</p>
           </div>
           

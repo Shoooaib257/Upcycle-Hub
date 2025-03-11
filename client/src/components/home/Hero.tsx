@@ -10,7 +10,7 @@ export default function Hero() {
           <p className="text-lg md:text-xl mb-8">Join our community of eco-conscious buyers and sellers dedicated to reducing waste through creative upcycling.</p>
           <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
             <Link href="/products">
-              <Button className="bg-accent text-white px-8 py-3 h-auto rounded-full font-heading font-bold text-center hover:bg-opacity-90 transition w-full sm:w-auto">
+              <Button className="bg-emerald-500 text-white px-8 py-3 h-auto rounded-full font-heading font-bold text-center hover:bg-emerald-600 transition w-full sm:w-auto">
                 Shop Now
               </Button>
             </Link>

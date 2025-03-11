@@ -14,7 +14,7 @@ export default function JoinCommunity() {
             </Button>
           </Link>
           <Link href="/about">
-            <Button variant="outline" className="border-2 border-white text-white px-8 py-3 h-auto rounded-full font-heading font-semibold hover:bg-white hover:text-primary transition w-full sm:w-auto">
+            <Button className="bg-emerald-500 text-white px-8 py-3 h-auto rounded-full font-heading font-semibold hover:bg-emerald-600 transition w-full sm:w-auto">
               Learn How It Works
             </Button>
           </Link>
