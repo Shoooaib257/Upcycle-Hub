@@ -11,7 +11,7 @@ import { queryClient } from "@/lib/queryClient";
 
 // Make sure to call `loadStripe` outside of a component's render to avoid
 // recreating the `Stripe` object on every render.
-const stripeKey = import.meta.env.VITE_STRIPE_PUBLIC_KEY || 'pk_test_51OZIBnQWr0fF1SuQ8y7vOeWH99ECmx2gGS5Qd7YYg4XQc6s5PyeUxHGhbzKglG3aDRbpGvWgfiQjXHzA6OLpIzwF00uRPGGcjl';
+const stripeKey = import.meta.env.VITE_STRIPE_PUBLIC_KEY;
 const stripePromise = loadStripe(stripeKey);
 
 interface CheckoutFormComponentProps {

@@ -25,7 +25,7 @@ import MemoryStore from "memorystore";
 if (!process.env.STRIPE_SECRET_KEY) {
   console.warn('Missing STRIPE_SECRET_KEY environment variable, using test key');
 }
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_51OZIBnQWr0fF1SuQSscqzgVXzqKa7Cd8Ju6Hhm4DjFIbCF3d2oWlhjfwDfZvUxFuGw3xLQvjEYkAFeSNEMmAYvNq00VdZUKLgA', {
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16',
 });
 
